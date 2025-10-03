@@ -8,6 +8,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import CameraInfo
 from packaging.version import parse
+from std_msgs.msg import String 
 
 if parse(cv2.__version__) >= parse('4.7.0'):
     def local_estimatePoseSingleMarkers(corners, marker_size, mtx, distortion):
@@ -64,6 +65,8 @@ class ArucoTarget(Node):
 
         self.create_subscription(Image, self._image_topic, self._image_callback, 1)
         self.create_subscription(CameraInfo, self._info_topic, self._info_callback, 1)
+        
+        self._target_info_publisher = self.create_publisher(String, '/aruco_target_info', 1)
 
         self._bridge = CvBridge()
 
@@ -100,6 +103,9 @@ class ArucoTarget(Node):
         frame = cv2.aruco.drawDetectedMarkers(self._image, corners, ids)
         if ids is None:
             self.get_logger().info(f"No targets found!")
+            target_info = String()
+            target_info.data = f"No targets found!"
+            self._target_info_publisher.publish(target_info)
             return
         if self._cameraMatrix is None:
             self.get_logger().info(f"We have not yet received a camera_info message")
@@ -112,6 +118,9 @@ class ArucoTarget(Node):
         result = self._image.copy()
         for r,t in zip(rvec,tvec):
             self.get_logger().info(f"Found a target at {t} rotation {r}")
+            target_info = String()
+            target_info.data = f"Found a target at {t} rotation {r}"
+            self._target_info_publisher.publish(target_info)
             if parse(cv2.__version__) < parse('4.7.0'):
                 result = cv2.aruco.drawAxis(result, self._cameraMatrix, self._distortion, r, t, self._target_width)
             else:
@@ -122,8 +131,8 @@ class ArucoTarget(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-#    node = ArucoTarget()
-    node = ArucoTarget(tag_set="4x4_50", target_width=0.048)
+    node = ArucoTarget()
+#    node = ArucoTarget(tag_set="4x4_50", target_width=0.048)
     try:
         rclpy.spin(node)
         rclpy.shutdown()
@@ -132,4 +141,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
