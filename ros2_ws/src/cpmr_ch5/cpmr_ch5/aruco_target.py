@@ -119,7 +119,7 @@ class ArucoTarget(Node):
         for r,t in zip(rvec,tvec):
             self.get_logger().info(f"Found a target at {t} rotation {r}")
             target_info = String()
-            target_info.data = f"Found a target at {t} rotation {r}"
+            target_info.data = f"{t} {r}"
             self._target_info_publisher.publish(target_info)
             if parse(cv2.__version__) < parse('4.7.0'):
                 result = cv2.aruco.drawAxis(result, self._cameraMatrix, self._distortion, r, t, self._target_width)
