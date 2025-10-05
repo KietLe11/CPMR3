@@ -51,49 +51,55 @@ class MoveToGoal(Node):
         self._target_info = self.create_subscription(String, "/aruco_target_info", self._target_info_callback, 1)
         self._publisher = self.create_publisher(Twist, "/cmd_vel", 1)
 
+        self._target_visible = False # can it see the Aruco?
+
     # called by /aruco_target_info topic
     def _target_info_callback(self, msg):
         try:
-            # msg.data format: "[[x, y, z]] [[a, b, c]]"
-            coords, orientation = msg.data.split(" ")
-            # SECTION NEEDS WORK 
-            # coords format: [[x, y, z]]
-            x, y, z = coords.strip("[]").split(",")
-            x = float(x)
-            y = float(y)
-            z = float(z)
-            # orientation format: [[a, b, c]]
-            a, b, c = orientation.strip("[]").split(",")
-            a = float(a)
-            b = float(b)
-            c = float(c)
-            self.get_logger().info(f"New goal from Aruco: x={x}, y={y}, z={z}, a={a}, b={b}, c={c}")
-        except ValueError:
-            self.get_logger().warn("Invalid format for /aruco_target_info message. Expected 'x,y,theta'")
+            if "No targets found!" in msg.data:
+                # If the target is lost, set the state to False
+                if self._target_visible:
+                    self.get_logger().info("Target lost. Searching...")
+                self._target_visible = False
+                return
+
+            # If we received a valid message, the target is visible
+            self._target_visible = True
+            
+            position_str = msg.data.split(']]')[0].strip('[ ')
+            x, y, z = map(float, position_str.split())
+            self._goal_x = z
+            self._goal_y = -x
+            self.get_logger().info(f"Target visible. New goal: x={self._goal_x}, y={self._goal_y}")
+            
         except Exception as e:
-            self.get_logger().warn(f"Error processing /aruco_target_info message: {e}")
+            self.get_logger().warn(f"Error processing /aruco_target_info message: '{msg.data}'. Error: {e}")
 
     # called by /odom topic
-    def _listener_callback(self, msg, vel_gain=5.0, max_vel=0.2, max_pos_err=0.05):
-        pose = msg.pose.pose
+    def _listener_callback(self, msg, vel_gain=5.0, max_vel=0.2, max_pos_err=0.05, search_speed=0.3):
+        twist = Twist() # Create a Twist message to populate
 
-        cur_x = pose.position.x
-        cur_y = pose.position.y
-        o = pose.orientation
-        roll, pitchc, yaw = euler_from_quaternion(o)
-        cur_t = yaw
-        
-        x_diff = self._goal_x - cur_x
-        y_diff = self._goal_y - cur_y
-        dist = math.sqrt(x_diff * x_diff + y_diff * y_diff)
+        if self._target_visible:
+            pose = msg.pose.pose
+            cur_x = pose.position.x
+            cur_y = pose.position.y
+            roll, pitch, yaw = euler_from_quaternion(pose.orientation)
+            cur_t = yaw
+            
+            x_diff = self._goal_x - cur_x
+            y_diff = self._goal_y - cur_y
+            dist = math.sqrt(x_diff * x_diff + y_diff * y_diff)
 
-        twist = Twist()
-        if dist > max_pos_err:
-            x = max(min(x_diff * vel_gain, max_vel), -max_vel)
-            y = max(min(y_diff * vel_gain, max_vel), -max_vel)
-            twist.linear.x = x * math.cos(cur_t) + y * math.sin(cur_t)
-            twist.linear.y = -x * math.sin(cur_t) + y * math.cos(cur_t)
-            self.get_logger().info(f"at ({cur_x},{cur_y},{cur_t}) goal ({self._goal_x},{self._goal_y},{self._goal_t})")
+            if dist > max_pos_err:
+                x = max(min(x_diff * vel_gain, max_vel), -max_vel)
+                y = max(min(y_diff * vel_gain, max_vel), -max_vel)
+                twist.linear.x = x * math.cos(cur_t) + y * math.sin(cur_t)
+                twist.linear.y = -x * math.sin(cur_t) + y * math.cos(cur_t)
+        else:
+            twist.linear.x = 0.0
+            twist.linear.y = 0.0
+            twist.angular.z = search_speed # A constant speed, e.g., 0.3 rad/s
+
         self._publisher.publish(twist)
 
     def parameter_callback(self, params):
