@@ -27,6 +27,7 @@ setup(
             'add_obstacle = cpmr_ch2.add_obstacle:main',
             'build_map = cpmr_ch2.build_map:main',
             'destroy_map = cpmr_ch2.destroy_map:main',
+            'drive_to_aruco = cpmr_ch2.drive_to_aruco:main',
         ],
     },
 )
