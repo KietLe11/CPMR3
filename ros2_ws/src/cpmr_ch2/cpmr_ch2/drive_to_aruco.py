@@ -95,6 +95,10 @@ class MoveToGoal(Node):
                 y = max(min(y_diff * vel_gain, max_vel), -max_vel)
                 twist.linear.x = x * math.cos(cur_t) + y * math.sin(cur_t)
                 twist.linear.y = -x * math.sin(cur_t) + y * math.cos(cur_t)
+            elif dist <= max_pos_err:
+                twist.linear.x = 0.0
+                twist.linear.y = 0.0
+                twist.angular.z = 0.0
         else:
             twist.linear.x = 0.0
             twist.linear.y = 0.0
