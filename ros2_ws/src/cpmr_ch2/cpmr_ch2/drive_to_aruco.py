@@ -38,65 +38,88 @@ class MoveToGoal(Node):
         super().__init__('move_robot_to_goal')
         self.get_logger().info(f'{self.get_name()} created')
 
-        # These variables will now store the RELATIVE position of the target
-        self._target_dist = 0.0      # Z distance from camera
-        self._target_sideways = 0.0  # X distance from camera
+        self.declare_parameter('goal_x', 0.0)
+        self._goal_x = self.get_parameter('goal_x').get_parameter_value().double_value
+        self.declare_parameter('goal_y', 0.0)
+        self._goal_y = self.get_parameter('goal_y').get_parameter_value().double_value
+        self.declare_parameter('goal_t', 0.0)
+        self._goal_t = self.get_parameter('goal_t').get_parameter_value().double_value
+        self.add_on_set_parameters_callback(self.parameter_callback)
+        self.get_logger().info(f"initial goal {self._goal_x} {self._goal_y} {self._goal_t}")
 
         self._subscriber = self.create_subscription(Odometry, "/odom", self._listener_callback, 1)
         self._target_info = self.create_subscription(String, "/aruco_target_info", self._target_info_callback, 1)
         self._publisher = self.create_publisher(Twist, "/cmd_vel", 1)
 
-        self._target_visible = False
+        self._target_visible = False # can it see the Aruco?
 
-    # The target callback now just saves the relative position
+    # called by /aruco_target_info topic
     def _target_info_callback(self, msg):
         try:
             if "No targets found!" in msg.data:
+                # If the target is lost, set the state to False
                 if self._target_visible:
                     self.get_logger().info("Target lost. Searching...")
                 self._target_visible = False
                 return
 
+            # If we received a valid message, the target is visible
             self._target_visible = True
             
             position_str = msg.data.split(']]')[0].strip('[ ')
             x, y, z = map(float, position_str.split())
-
-            # Store the relative distance and sideways error
-            self._target_dist = z
-            self._target_sideways = -x # Negative so a positive x (left) causes a positive (left) turn
+            self._goal_x = z
+            self._goal_y = -x
+            self.get_logger().info(f"Target visible. New goal: x={self._goal_x}, y={self._goal_y}")
             
         except Exception as e:
             self.get_logger().warn(f"Error processing /aruco_target_info message: '{msg.data}'. Error: {e}")
 
-    # The listener callback is now much simpler
-    def _listener_callback(self, msg, fwd_gain=0.5, turn_gain=1.0, stop_dist=0.3, search_speed=0.3):
-        twist = Twist()
+    # called by /odom topic
+    def _listener_callback(self, msg, vel_gain=5.0, max_vel=0.2, max_pos_err=0.05, search_speed=0.3):
+        twist = Twist() # Create a Twist message to populate
 
         if self._target_visible:
-            # --- BEHAVIOR 1: TARGET IS VISIBLE ---
-            # Drive towards the target based on its relative position
+            pose = msg.pose.pose
+            cur_x = pose.position.x
+            cur_y = pose.position.y
+            roll, pitch, yaw = euler_from_quaternion(pose.orientation)
+            cur_t = yaw
             
-            if self._target_dist > stop_dist:
-                # We are too far away, so drive forward and turn
-                twist.linear.x = self._target_dist * fwd_gain
-                twist.angular.z = self._target_sideways * turn_gain
-            else:
-                # We are close enough, so stop
+            x_diff = self._goal_x - cur_x
+            y_diff = self._goal_y - cur_y
+            dist = math.sqrt(x_diff * x_diff + y_diff * y_diff)
+
+            if dist > max_pos_err:
+                x = max(min(x_diff * vel_gain, max_vel), -max_vel)
+                y = max(min(y_diff * vel_gain, max_vel), -max_vel)
+                twist.linear.x = x * math.cos(cur_t) + y * math.sin(cur_t)
+                twist.linear.y = -x * math.sin(cur_t) + y * math.cos(cur_t)
+            elif dist <= max_pos_err:
                 twist.linear.x = 0.0
+                twist.linear.y = 0.0
                 twist.angular.z = 0.0
         else:
-            # --- BEHAVIOR 2: TARGET IS LOST ---
-            # Rotate in place to search
             twist.linear.x = 0.0
-            twist.angular.z = search_speed
+            twist.linear.y = 0.0
+            twist.angular.z = search_speed # A constant speed, e.g., 0.3 rad/s
 
         self._publisher.publish(twist)
 
-    # ... (parameter_callback and main function can remain the same) ...
     def parameter_callback(self, params):
-        # This function is now less useful as we don't use absolute goals,
-        # but we can leave it for now.
+        self.get_logger().info(f'move_robot_to_goal parameter callback {params}')
+        for param in params:
+            self.get_logger().info(f'move_robot_to_goal processing {param.name}')
+            if param.name == 'goal_x' and param.type_ == Parameter.Type.DOUBLE:
+                self._goal_x = param.value
+            elif param.name == 'goal_y' and param.type_ == Parameter.Type.DOUBLE:
+                self._goal_y = param.value
+            elif param.name == 'goal_t' and param.type_ == Parameter.Type.DOUBLE:
+                self._goal_t = param.value
+            else:
+                self.get_logger().warn(f'{self.get_name()} Invalid parameter {param.name}')
+                return SetParametersResult(successful=False)
+            self.get_logger().warn(f"Changing goal {self._goal_x} {self._goal_y} {self._goal_t}")
         return SetParametersResult(successful=True)
 
 def main(args=None):
@@ -110,3 +133,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+
