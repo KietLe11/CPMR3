@@ -15,6 +15,7 @@ from geometry_msgs.msg import Twist
 from rclpy.qos import qos_profile_sensor_data
 from ultralytics.engine.results import Results, Keypoints
 from ament_index_python.packages import get_package_share_directory
+from std_msgs.msg import String
 
 class YOLO_Pose(Node):
     _BODY_PARTS = ["NOSE", "LEFT_EYE", "RIGHT_EYE", "LEFT_EAR", "RIGHT_EAR", "LEFT_SHOULDER", "RIGHT_SHOULDER",
@@ -46,6 +47,9 @@ class YOLO_Pose(Node):
 
         # subs
         self._sub = self.create_subscription(Image, self._camera_topic, self._camera_callback, 1) 
+        
+        # pubs 
+        self._pub = self.create_publisher(String, 'camera_info', 1)
         
     def parse_keypoints(self, results: Results):
 
@@ -88,6 +92,9 @@ class YOLO_Pose(Node):
             if len(keypoints) > 0:
                 for i in range(len(keypoints)):
                     self.get_logger().info(f'{self.get_name()}  {YOLO_Pose._BODY_PARTS[keypoints[i][0]]} {keypoints[i]}')
+                    msg = String() 
+                    msg.data = f'{self.get_name()}  {YOLO_Pose._BODY_PARTS[keypoints[i][0]]} {keypoints[i]}'
+                    self._pub.publish(msg)
 
                 # Visualize results on frame        
                 annotated_frame = results[0].plot()
@@ -105,5 +112,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
-
