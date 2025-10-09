@@ -23,7 +23,7 @@ setup(
             'kinova_gen3_node = kinova_gen3.kinova_gen3_node:main',
             'kinova_gen3_tester = kinova_gen3.kinova_gen3_tester:main',
             'assignment_1 = kinova_gen3.assignment_1:main',
-            'lab_5 = kinova_gen3.assignment_1:main'
+            'lab_5 = kinova_gen3.lab_5:main'
         ],
     },
 )
